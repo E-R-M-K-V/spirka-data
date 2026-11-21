@@ -1,0 +1,33 @@
+name: Nightly timetable
+
+on:
+  schedule:
+    - cron: "30 0 * * *"     # 00:30 UTC = 02:30 in Sofia in winter, 03:30 in summer
+  workflow_dispatch:          # adds a "Run workflow" button for running it by hand
+
+permissions:
+  contents: write             # lets the job publish to the gh-pages branch
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and publish the timetable
+        env:
+          REPO_URL: https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+        run: bash scripts/nightly.sh
+
+      - name: Note the run (keeps the nightly schedule active)
+        run: |
+          date -u +"Last successful build: %Y-%m-%d %H:%M UTC" > last-build.txt
+          git config user.name "spirka-bot"
+          git config user.email "spirka-bot@users.noreply.github.com"
+          git add last-build.txt
+          git commit -q -m "Nightly build $(date -u +%Y-%m-%d)" && git push -q || echo "Nothing to note."
