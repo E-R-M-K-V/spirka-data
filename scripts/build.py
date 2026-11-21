@@ -76,14 +76,26 @@ for r in rd('stop_times.txt'):
             dep[s][(rid, hs, p)].append(m)
 
 # ---- stop list ----
+# Each stop: [id, code, name, English name, lat, lon, lines, towards]
+# 'towards' = the two most common destinations of the vehicles leaving this stop in the coming days,
+# so people can tell apart two stops with the same name on opposite sides of a road.
+def towards(stop_id, stop_name_en, stop_name):
+    count = collections.Counter()
+    for (rid, hs, p), ms in dep.get(stop_id, {}).items():
+        if hs and hs.upper() not in (stop_name_en.upper(), stop_name.upper()):   # trips ending here go nowhere from here
+            count[hs] += len(ms)
+    return [h for h, _ in count.most_common(2)]
+
 stops = []
 for r in rd('stops.txt'):
     if r['location_type'] not in ('', '0'):
         continue
     rs = sorted(serves.get(r['stop_id'], ()))
     if rs:
-        stops.append([r['stop_id'], r['stop_code'], r['stop_name'], en.get(r['stop_name'], ''),
-                      round(float(r['stop_lat']), 5), round(float(r['stop_lon']), 5), rs])
+        name_en = en.get(r['stop_name'], '')
+        stops.append([r['stop_id'], r['stop_code'], r['stop_name'], name_en,
+                      round(float(r['stop_lat']), 5), round(float(r['stop_lon']), 5), rs,
+                      towards(r['stop_id'], name_en, r['stop_name'])])
 
 # ---- sanity checks: if the city's file looks broken tonight, keep yesterday's data ----
 codes = {s[1] for s in stops}
