@@ -62,6 +62,7 @@ for r in rd('trips.txt'):
 
 # ---- stop times: every line serving a stop (any date), departures for the window ----
 serves = collections.defaultdict(set)
+trip_stops = collections.defaultdict(list)
 dep = collections.defaultdict(lambda: collections.defaultdict(list))   # stop -> (route, headsign, pattern) -> [minutes]
 for r in rd('stop_times.txt'):
     t = trips.get(r['trip_id'])
@@ -70,10 +71,44 @@ for r in rd('stop_times.txt'):
     rid, svc, hs = t
     s = r['stop_id']
     serves[s].add(rid)
+    if routes[rid][1] == 1:                                  # metro: keep each trip's stop order (see 'directions')
+        trip_stops[r['trip_id']].append((int(r['stop_sequence']), s))
     if svc in used_services:
         m = mins(r['departure_time'] or r['arrival_time'])
         for p in svc_patterns[svc]:
             dep[s][(rid, hs, p)].append(m)
+
+# ---- metro directions ----
+# A few metro trains end early (e.g. at Konstantin Velichkov). Each such destination is filed under the main
+# destination it shares a direction with, so the page can show them in one row, and each main direction gets
+# an 'inbound' mark at every station: does it head towards the centre (Serdica / NDK) from here?
+CENTRE = {'СЕРДИКА', 'СЕРДИКА II', 'НАЦИОНАЛЕН ДВОРЕЦ НА КУЛТУРАТА', 'НАЦИОНАЛЕН ДВОРЕЦ НА КУЛТУРАТА II'}
+stop_name = {r['stop_id']: r['stop_name'].upper() for r in rd('stops.txt')}
+main_of, seq_of = {}, {}          # (route, headsign) -> main headsign;  (route, main headsign) -> stop order
+by_route = collections.defaultdict(lambda: collections.defaultdict(list))
+for tid, st in trip_stops.items():
+    rid, svc, hs = trips[tid]
+    by_route[rid][hs].append([x for _, x in sorted(st)])
+for rid, hss in by_route.items():
+    mains = sorted(hss, key=lambda h: -len(hss[h]))[:2]
+    for m in mains:
+        seq_of[(rid, m)] = max(hss[m], key=len)
+        main_of[(rid, m)] = m
+    for hs, seqs in hss.items():
+        if hs in mains:
+            continue
+        first, last = seqs[0][0], seqs[0][-1]
+        for m in mains:
+            L = seq_of[(rid, m)]
+            if first in L and last in L and L.index(first) < L.index(last):
+                main_of[(rid, hs)] = m
+                break
+
+def inbound(rid, main, sid):
+    L = seq_of.get((rid, main))
+    if not L or sid not in L:
+        return 0
+    return int(any(stop_name.get(x) in CENTRE for x in L[L.index(sid) + 1:]))
 
 # ---- stop list ----
 # Each stop: [id, code, name, English name, lat, lon, lines, towards]
@@ -133,7 +168,11 @@ for s in stops:
         for ms in per:                                   # sorted, de-duplicated, stored as differences
             ms = sorted(set(ms))
             enc.append([ms[0]] + [b - a for a, b in zip(ms, ms[1:])] if ms else [])
-        out.append([rid, hs, enc])
+        if routes[rid][1] == 1 and (rid, hs) in main_of:    # metro: + main destination, + 1 if it heads to the centre
+            m = main_of[(rid, hs)]
+            out.append([rid, hs, enc, m, inbound(rid, m, sid)])
+        else:
+            out.append([rid, hs, enc])
     path = os.path.join(new_dir, 'stops', sid + '.json')
     dump(path, {'id': sid, 'r': out})
     nfiles += 1; nbytes += os.path.getsize(path)
