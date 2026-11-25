@@ -57,8 +57,11 @@ for r in rd('translations.txt'):
 routes = {r['route_id']: [r['route_short_name'], int(r['route_type']), r['route_color'] or '444444', r['route_text_color'] or 'FFFFFF']
           for r in rd('routes.txt')}
 trips = {}
+hs_bg = {}                        # destination as shown in English -> its Bulgarian original (for the page's Bulgarian mode)
 for r in rd('trips.txt'):
-    trips[r['trip_id']] = (r['route_id'], r['service_id'], en.get(r['trip_headsign'], r['trip_headsign']))
+    h = r['trip_headsign']; e = en.get(h, h)
+    trips[r['trip_id']] = (r['route_id'], r['service_id'], e)
+    if e != h: hs_bg[e] = h
 
 # ---- stop times: every line serving a stop (any date), departures for the window ----
 serves = collections.defaultdict(set)
@@ -154,7 +157,7 @@ os.makedirs(os.path.join(new_dir, 'stops'))
 
 dump(os.path.join(new_dir, 'index.json'), {
     'format': 2, 'built': dates[1], 'from': dates[0], 'to': dates[-1],
-    'patterns': len(patterns), 'days': days, 'routes': routes, 'stops': stops})
+    'patterns': len(patterns), 'days': days, 'routes': routes, 'stops': stops, 'hb': hs_bg})
 
 nfiles, nbytes = 0, 0
 for s in stops:
